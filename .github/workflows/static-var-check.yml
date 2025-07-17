@@ -1,0 +1,27 @@
+name: Static Variable Check
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  detect-static-vars:
+    name: Detect Static Variables in Java Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Search for static variables
+        run: |
+          echo "🚨 Scanning for static variables..."
+          STATIC_VARS=$(grep -rn --include="*.java" 'static [^)]*;' . | grep -vE 'static\s+final|static\s+void')
+          if [ -n "$STATIC_VARS" ]; then
+            echo "❌ Static variables found:"
+            echo "$STATIC_VARS"
+            exit 1
+          else
+            echo "✅ No static variables found."
+          fi
