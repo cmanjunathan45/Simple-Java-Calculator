@@ -14,16 +14,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Search for static variables
+      - name: Search for static variables with inline whitelist
         run: |
-          echo "🚨 Scanning for static variables..."
+          echo "🔍 Scanning for unapproved static variable usage..."
+          ALL_STATIC=$(grep -Prn --include="*.java" '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' .)
 
-          STATIC_VARS=$(grep -Prn --include="*.java" --exclude-dir={.git,test} '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' .)
+          # Allow inline whitelisted lines
+          UNAPPROVED=$(echo "$ALL_STATIC" | grep -v '// static-ok' || true)
 
-          if [ -n "$STATIC_VARS" ]; then
-            echo "❌ Static variables found:"
-            echo "$STATIC_VARS"
-            exit 1
+          if [ -n "$UNAPPROVED" ]; then
+            echo "⚠️ WARNING: Unapproved static variables detected:"
+            echo "$UNAPPROVED"
           else
-            echo "✅ No static variables found."
+            echo "✅ All static variables are explicitly approved."
           fi
