@@ -24,18 +24,24 @@ jobs:
           echo "$FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Detect static variables in changed files
+      - name: Detect static variables in changed lines only
         id: scan
         run: |
           EXIT_CODE=0
           UNAPPROVED=""
 
           for file in ${{ steps.files.outputs.changed_files }}; do
-            echo "🔍 Scanning $file"
-            FOUND=$(grep -nP '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' "$file" | grep -v '// static-ok' || true)
-            if [[ -n "$FOUND" ]]; then
-              echo "$FOUND"
-              UNAPPROVED+="$FOUND"$'\n'
+            echo "🔍 Scanning changed lines in $file"
+
+            # Only look at added lines (no context, no deletions)
+            ADDED_LINES=$(git diff -U0 origin/${{ github.base_ref }}...${{ github.sha }} -- "$file" | grep '^+[^+]' | cut -c2-)
+
+            # Find static usages not marked with // static-ok
+            MATCHED=$(echo "$ADDED_LINES" | grep -nP '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' | grep -v '// static-ok' || true)
+
+            if [[ -n "$MATCHED" ]]; then
+              echo "$MATCHED"
+              UNAPPROVED+="$file:\n$MATCHED\n"
               EXIT_CODE=1
             fi
           done
