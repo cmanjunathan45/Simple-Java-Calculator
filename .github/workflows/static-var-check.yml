@@ -17,7 +17,9 @@ jobs:
       - name: Search for static variables
         run: |
           echo "🚨 Scanning for static variables..."
-          STATIC_VARS=$(grep -rn --include="*.java" 'static [^)]*;' . | grep -vE 'static\s+final|static\s+void')
+
+          STATIC_VARS=$(grep -Prn --include="*.java" --exclude-dir={.git,test} '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' .)
+
           if [ -n "$STATIC_VARS" ]; then
             echo "❌ Static variables found:"
             echo "$STATIC_VARS"
