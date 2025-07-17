@@ -1,44 +1,50 @@
-name: Static Variable Check with Manual Approval
+name: Static Variable Check
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    branches:
+      - master
 
 jobs:
-  check-static-vars:
+  detect-static-vars:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
 
     steps:
-      - name: Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v3
-
-      - name: Detect static variables
-        id: scan
-        run: |
-          echo "🔍 Scanning for static variables..."
-          STATIC_VARS=$(grep -Prn --include="*.java" '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' . || true)
-
-          echo "static_found<<EOF" >> $GITHUB_OUTPUT
-          echo "$STATIC_VARS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Check for approval comment
-        id: check_comment
-        uses: peter-evans/find-comment@v3
         with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body-includes: "/approve static use"
+          fetch-depth: 0  # Required to diff against base branch
 
-      - name: Evaluate static variable policy
+      - name: Detect static variables in changed files
         run: |
-          echo "🧪 Evaluating static variable findings..."
+          echo "🔍 Scanning for static variables in changed Java files..."
 
-          if [[ "${{ steps.scan.outputs.static_found }}" != "" ]] && [[ "${{ steps.check_comment.outputs.comment-id }}" == "" ]]; then
-            echo "❌ Static variables found and no approval given."
-            echo "${{ steps.scan.outputs.static_found }}"
-            exit 1
-          else
-            echo "✅ Either no statics found or approval exists."
+          # Get list of changed .java files in the PR
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' || true)
+
+          if [[ -z "$FILES" ]]; then
+            echo "✅ No Java files changed. Skipping static var check."
+            exit 0
           fi
+
+          echo "📁 Files to check:"
+          echo "$FILES"
+
+          EXIT_CODE=0
+
+          for file in $FILES; do
+            echo "📄 Checking $file"
+            STATIC_LINES=$(grep -nP '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' "$file" | grep -v '// static-ok' || true)
+
+            if [[ -n "$STATIC_LINES" ]]; then
+              echo "❌ Unapproved static variables in $file:"
+              echo "$STATIC_LINES"
+              EXIT_CODE=1
+            fi
+          done
+
+          if [[ "$EXIT_CODE" -eq 0 ]]; then
+            echo "✅ No unapproved static variables found."
+          fi
+
+          exit $EXIT_CODE
