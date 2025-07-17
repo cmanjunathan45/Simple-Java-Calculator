@@ -17,7 +17,7 @@
 package simplejavacalculator;
 
 public class SimpleJavaCalculator {
-   
+   public static String test;
    public static void main(String[] args) {
       try {
          UI uiCal = new UI();
