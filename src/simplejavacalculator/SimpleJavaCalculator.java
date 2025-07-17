@@ -25,6 +25,8 @@ public class SimpleJavaCalculator {
    public static String test12;
    public static String valm;    // static-ok
    public static String valn;
+   public static String vala;    // static-ok
+   public static String valb;
    public static void main(String[] args) {
       try {
          UI uiCal = new UI();
