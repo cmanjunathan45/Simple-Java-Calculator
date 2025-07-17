@@ -1,0 +1,69 @@
+name: Static Variable Check with Manual Approval
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  check-static-vars:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Get changed Java files
+        id: files
+        run: |
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' || true)
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Detect static variables in changed files
+        id: scan
+        run: |
+          EXIT_CODE=0
+          UNAPPROVED=""
+
+          for file in ${{ steps.files.outputs.changed_files }}; do
+            echo "🔍 Scanning $file"
+            FOUND=$(grep -nP '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' "$file" | grep -v '// static-ok' || true)
+            if [[ -n "$FOUND" ]]; then
+              echo "$FOUND"
+              UNAPPROVED+="$FOUND"$'\n'
+              EXIT_CODE=1
+            fi
+          done
+
+          echo "unapproved_static<<EOF" >> $GITHUB_OUTPUT
+          echo "$UNAPPROVED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+      - name: Check for approval comment
+        id: approve
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "/approve static use"
+
+      - name: Final decision
+        run: |
+          if [[ "${{ steps.scan.outputs.exit_code }}" == "0" ]]; then
+            echo "✅ No unapproved static vars."
+            exit 0
+          fi
+
+          if [[ "${{ steps.approve.outputs.comment-id }}" != "" ]]; then
+            echo "✅ Manual approval comment found. Proceeding."
+            exit 0
+          fi
+
+          echo "❌ Static variables detected without approval."
+          echo "${{ steps.scan.outputs.unapproved_static }}"
+          exit 1
