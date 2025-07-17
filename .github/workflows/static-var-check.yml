@@ -20,7 +20,9 @@ jobs:
         id: files
         run: |
           FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' || true)
-          echo "changed_files=$FILES" >> $GITHUB_OUTPUT
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Detect static variables in changed files
         id: scan
@@ -29,7 +31,7 @@ jobs:
           UNAPPROVED=""
 
           for file in ${{ steps.files.outputs.changed_files }}; do
-            echo "📄 Scanning $file..."
+            echo "🔍 Scanning $file"
             FOUND=$(grep -nP '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' "$file" | grep -v '// static-ok' || true)
             if [[ -n "$FOUND" ]]; then
               echo "$FOUND"
@@ -41,7 +43,6 @@ jobs:
           echo "unapproved_static<<EOF" >> $GITHUB_OUTPUT
           echo "$UNAPPROVED" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
 
       - name: Check for approval comment
@@ -53,18 +54,16 @@ jobs:
 
       - name: Final decision
         run: |
-          echo "🧪 Evaluating results..."
-
           if [[ "${{ steps.scan.outputs.exit_code }}" == "0" ]]; then
-            echo "✅ No unapproved static variables found."
+            echo "✅ No unapproved static vars."
             exit 0
           fi
 
           if [[ "${{ steps.approve.outputs.comment-id }}" != "" ]]; then
-            echo "✅ Manual approval found in PR comments. Allowing merge."
+            echo "✅ Manual approval comment found. Proceeding."
             exit 0
           fi
 
-          echo "❌ Static variables found and no approval given."
+          echo "❌ Static variables detected without approval."
           echo "${{ steps.scan.outputs.unapproved_static }}"
           exit 1
