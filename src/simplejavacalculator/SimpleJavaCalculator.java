@@ -19,10 +19,10 @@ package simplejavacalculator;
 public class SimpleJavaCalculator {
    public static String test7 = "test"; // static-ok
    public static String test8;
-   public static String test9;    // static-ok
-   public static String test10;
-   public static String test11;    // static-ok
-   public static String test12;
+   public static String val = "test"; // static-ok
+   public static String val1;
+   public static String val2 = "test"; // static-ok
+   public static String val3;
    public static void main(String[] args) {
       try {
          UI uiCal = new UI();
