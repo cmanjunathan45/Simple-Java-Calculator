@@ -19,6 +19,8 @@ package simplejavacalculator;
 public class SimpleJavaCalculator {
    public static String test4 = "test"; // static-ok
    public static String test3;
+   public static String test5 = "test"; // static-ok
+   public static String test6;
    public static void main(String[] args) {
       try {
          UI uiCal = new UI();
