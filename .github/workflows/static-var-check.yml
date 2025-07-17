@@ -1,50 +1,70 @@
-name: Static Variable Check
+name: Static Variable Check with Manual Approval
 
 on:
   pull_request:
-    branches:
-      - master
+    types: [opened, synchronize, reopened, edited]
 
 jobs:
-  detect-static-vars:
+  check-static-vars:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Required to diff against base branch
+          fetch-depth: 0
+
+      - name: Get changed Java files
+        id: files
+        run: |
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' || true)
+          echo "changed_files=$FILES" >> $GITHUB_OUTPUT
 
       - name: Detect static variables in changed files
+        id: scan
         run: |
-          echo "🔍 Scanning for static variables in changed Java files..."
-
-          # Get list of changed .java files in the PR
-          FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' || true)
-
-          if [[ -z "$FILES" ]]; then
-            echo "✅ No Java files changed. Skipping static var check."
-            exit 0
-          fi
-
-          echo "📁 Files to check:"
-          echo "$FILES"
-
           EXIT_CODE=0
+          UNAPPROVED=""
 
-          for file in $FILES; do
-            echo "📄 Checking $file"
-            STATIC_LINES=$(grep -nP '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' "$file" | grep -v '// static-ok' || true)
-
-            if [[ -n "$STATIC_LINES" ]]; then
-              echo "❌ Unapproved static variables in $file:"
-              echo "$STATIC_LINES"
+          for file in ${{ steps.files.outputs.changed_files }}; do
+            echo "📄 Scanning $file..."
+            FOUND=$(grep -nP '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' "$file" | grep -v '// static-ok' || true)
+            if [[ -n "$FOUND" ]]; then
+              echo "$FOUND"
+              UNAPPROVED+="$FOUND"$'\n'
               EXIT_CODE=1
             fi
           done
 
-          if [[ "$EXIT_CODE" -eq 0 ]]; then
+          echo "unapproved_static<<EOF" >> $GITHUB_OUTPUT
+          echo "$UNAPPROVED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+      - name: Check for approval comment
+        id: approve
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "/approve static use"
+
+      - name: Final decision
+        run: |
+          echo "🧪 Evaluating results..."
+
+          if [[ "${{ steps.scan.outputs.exit_code }}" == "0" ]]; then
             echo "✅ No unapproved static variables found."
+            exit 0
           fi
 
-          exit $EXIT_CODE
+          if [[ "${{ steps.approve.outputs.comment-id }}" != "" ]]; then
+            echo "✅ Manual approval found in PR comments. Allowing merge."
+            exit 0
+          fi
+
+          echo "❌ Static variables found and no approval given."
+          echo "${{ steps.scan.outputs.unapproved_static }}"
+          exit 1
