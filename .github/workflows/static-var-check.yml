@@ -1,31 +1,44 @@
-name: Static Variable Check
+name: Static Variable Check with Manual Approval
 
 on:
   pull_request:
-    branches:
-      - master
+    types: [opened, synchronize, reopened, edited]
 
 jobs:
-  detect-static-vars:
-    name: Detect Static Variables in Java Code
+  check-static-vars:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
 
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Search for static variables with inline whitelist
+      - name: Detect static variables
+        id: scan
         run: |
-          echo "🔍 Scanning for unapproved static variable usage..."
-          ALL_STATIC=$(grep -Prn --include="*.java" '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' .)
+          echo "🔍 Scanning for static variables..."
+          STATIC_VARS=$(grep -Prn --include="*.java" '\bstatic\s+(?!final\b)[\w<>\[\]]+\s+\w+\s*(=|;)' . || true)
 
-          # Filter out approved lines
-          UNAPPROVED=$(echo "$ALL_STATIC" | grep -v '// static-ok' || true)
+          echo "static_found<<EOF" >> $GITHUB_OUTPUT
+          echo "$STATIC_VARS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-          if [ -n "$UNAPPROVED" ]; then
-            echo "❌ Unapproved static variables detected:"
-            echo "$UNAPPROVED"
-            exit 1  # ❌ Block the build!
+      - name: Check for approval comment
+        id: check_comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "/approve static use"
+
+      - name: Evaluate static variable policy
+        run: |
+          echo "🧪 Evaluating static variable findings..."
+
+          if [[ "${{ steps.scan.outputs.static_found }}" != "" ]] && [[ "${{ steps.check_comment.outputs.comment-id }}" == "" ]]; then
+            echo "❌ Static variables found and no approval given."
+            echo "${{ steps.scan.outputs.static_found }}"
+            exit 1
           else
-            echo "✅ All static variables are explicitly approved."
+            echo "✅ Either no statics found or approval exists."
           fi
